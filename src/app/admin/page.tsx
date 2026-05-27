@@ -2,22 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { format } from "date-fns";
 import { ChevronRight, Shield, ShieldCheck, UserX } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { ClientUser } from "@/lib/types";
-import { formatMoney } from "@/lib/time";
+import { describePayPeriod, formatHours, formatMoney } from "@/lib/time";
+
+type Summary = Awaited<ReturnType<typeof api.adminSummary>>;
 
 export default function AdminPage() {
   const { user } = useApp();
-  const [users, setUsers] = useState<ClientUser[] | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .listUsers()
-      .then((r) => setUsers(r.users))
+      .adminSummary()
+      .then(setSummary)
       .catch((e) => setErr(e instanceof Error ? e.message : "Failed"));
   }, []);
 
@@ -35,26 +38,76 @@ export default function AdminPage() {
     if (!confirm(`Change ${u.email} to ${u.role === "admin" ? "employee" : "admin"}?`)) return;
     const next = u.role === "admin" ? "employee" : "admin";
     const { user: updated } = await api.updateUser(u.id, { role: next });
-    setUsers((list) => list?.map((x) => (x.id === u.id ? updated : x)) || null);
+    setSummary((s) =>
+      s
+        ? {
+            ...s,
+            rows: s.rows.map((r) => (r.user.id === u.id ? { ...r, user: updated } : r)),
+          }
+        : s,
+    );
   }
 
   async function toggleActive(u: ClientUser) {
     if (u.id === user!.id) return;
     const { user: updated } = await api.updateUser(u.id, { active: !u.active });
-    setUsers((list) => list?.map((x) => (x.id === u.id ? updated : x)) || null);
+    setSummary((s) =>
+      s
+        ? {
+            ...s,
+            rows: s.rows.map((r) => (r.user.id === u.id ? { ...r, user: updated } : r)),
+          }
+        : s,
+    );
   }
+
+  const currency = user.settings.currency;
+  const periodLabel = summary?.rows[0]?.period;
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Team" subtitle="Manage employees and view their hours" />
+      <PageHeader title="Team" subtitle="Payroll summary across all employees" />
       {err && <Card>{err}</Card>}
-      {!users && !err && <Card>Loading…</Card>}
-      {users && users.length === 0 && <Card>No employees yet.</Card>}
-      <div className="space-y-2">
-        {users?.map((u) => (
-          <Card key={u.id} className="!p-0">
-            <div className="flex items-center justify-between p-3">
-              <Link href={`/admin/${u.id}`} className="flex flex-1 items-center gap-3">
+      {!summary && !err && <Card>Loading…</Card>}
+
+      {summary && (
+        <Card>
+          <div className="text-xs uppercase tracking-wider text-slate-500">
+            {describePayPeriod(user.settings.payPeriodType)} period
+            {periodLabel && (
+              <>
+                {" · "}
+                {format(new Date(periodLabel.start), "MMM d")} –{" "}
+                {format(new Date(periodLabel.end), "MMM d")}
+              </>
+            )}
+          </div>
+          <div className="mt-1 flex items-baseline justify-between">
+            <div className="text-3xl font-semibold tabular-nums">
+              {formatMoney(summary.grand.gross, currency)}
+            </div>
+            <div className="text-right text-sm text-slate-500">
+              <div>{formatHours(summary.grand.hours)} total</div>
+              {summary.grand.overtime > 0 && (
+                <div className="text-amber-700 dark:text-amber-300">
+                  {formatHours(summary.grand.overtime)} OT
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {summary.rows.filter((r) => r.user.active).length} active ·{" "}
+            {summary.rows.length} total
+          </div>
+        </Card>
+      )}
+
+      {summary && (
+        <div className="space-y-2">
+          {summary.rows.length === 0 && <Card>No employees yet.</Card>}
+          {summary.rows.map(({ user: u, period, week }) => (
+            <Card key={u.id} className="!p-0">
+              <Link href={`/admin/${u.id}`} className="flex items-center gap-3 p-3">
                 <div
                   className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${
                     u.active
@@ -79,33 +132,42 @@ export default function AdminPage() {
                     )}
                   </div>
                   <div className="truncate text-xs text-slate-500">
-                    {u.email} · {formatMoney(u.settings.hourlyRate, u.settings.currency)}/hr
+                    {formatMoney(u.settings.hourlyRate, u.settings.currency)}/hr · Week{" "}
+                    {formatHours(week.totals.hours)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold tabular-nums">
+                    {formatHours(period.totals.totalHours)}
+                  </div>
+                  <div className="text-xs text-slate-500 tabular-nums">
+                    {formatMoney(period.totals.gross, u.settings.currency)}
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-slate-400" />
               </Link>
-            </div>
-            {u.id !== user.id && (
-              <div className="flex border-t border-slate-200 dark:border-slate-800">
-                <button
-                  onClick={() => toggleRole(u)}
-                  className="flex flex-1 items-center justify-center gap-1.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  {u.role === "admin" ? <Shield size={14} /> : <ShieldCheck size={14} />}
-                  {u.role === "admin" ? "Demote" : "Promote"}
-                </button>
-                <button
-                  onClick={() => toggleActive(u)}
-                  className="flex flex-1 items-center justify-center gap-1.5 border-l border-slate-200 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                  <UserX size={14} />
-                  {u.active ? "Deactivate" : "Reactivate"}
-                </button>
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
+              {u.id !== user.id && (
+                <div className="flex border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    onClick={() => toggleRole(u)}
+                    className="flex flex-1 items-center justify-center gap-1.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    {u.role === "admin" ? <Shield size={14} /> : <ShieldCheck size={14} />}
+                    {u.role === "admin" ? "Demote" : "Promote"}
+                  </button>
+                  <button
+                    onClick={() => toggleActive(u)}
+                    className="flex flex-1 items-center justify-center gap-1.5 border-l border-slate-200 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    <UserX size={14} />
+                    {u.active ? "Deactivate" : "Reactivate"}
+                  </button>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

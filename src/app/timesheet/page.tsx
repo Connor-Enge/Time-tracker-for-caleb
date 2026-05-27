@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { ShiftRow } from "@/components/ShiftRow";
 import { dayKey, formatHours, formatMoney, shiftHours } from "@/lib/time";
+import { downloadCSV, shiftsToCSV } from "@/lib/csv";
 
 export default function TimesheetPage() {
   const { user, shifts, addManualShift } = useApp();
@@ -58,12 +59,26 @@ export default function TimesheetPage() {
         title="Timesheet"
         subtitle={`${formatHours(totalHours)} · ${formatMoney(totalPay, user?.settings.currency)}`}
         right={
-          <button
-            onClick={() => setAdding((v) => !v)}
-            className="flex items-center gap-1 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white shadow-sm"
-          >
-            <Plus size={16} /> Add
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (!user) return;
+                const rows = shiftsToCSV(shifts, user.settings.hourlyRate, user.name || user.email);
+                downloadCSV(`shifts-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+              }}
+              disabled={shifts.length === 0}
+              className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-slate-700"
+              aria-label="Export CSV"
+            >
+              <Download size={16} />
+            </button>
+            <button
+              onClick={() => setAdding((v) => !v)}
+              className="flex items-center gap-1 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white shadow-sm"
+            >
+              <Plus size={16} /> Add
+            </button>
+          </div>
         }
       />
 

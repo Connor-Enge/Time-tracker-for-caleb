@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Coffee, Pause, Play, X } from "lucide-react";
+import { AlertTriangle, Coffee, Pause, Play, X } from "lucide-react";
 import { useApp } from "./AppProvider";
 import { formatDuration, formatHours, formatMoney } from "@/lib/time";
 import { Card } from "./PageHeader";
@@ -123,6 +123,23 @@ export function ClockCard() {
           >
             <X size={14} /> Cancel
           </button>
+        </div>
+      )}
+
+      {running && elapsedHours >= 12 && (
+        <div
+          className={`mt-3 flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left text-sm ${
+            elapsedHours >= 16
+              ? "border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200"
+              : "border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
+          }`}
+        >
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            {elapsedHours >= 16
+              ? "You've been clocked in for over 16 hours. Did you forget to clock out?"
+              : "Long shift — over 12 hours on the clock."}
+          </span>
         </div>
       )}
 

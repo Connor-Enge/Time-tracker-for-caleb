@@ -69,6 +69,19 @@ export const api = {
     request<{ user: ClientUser }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
 
   listUsers: () => request<{ users: ClientUser[] }>("/api/admin/users"),
+  adminSummary: () =>
+    request<{
+      rows: {
+        user: ClientUser;
+        week: { start: string; end: string; totals: { hours: number; regular: number; overtime: number; pay: number } };
+        period: {
+          start: string;
+          end: string;
+          totals: { totalHours: number; regular: number; overtime: number; gross: number; tax: number; net: number };
+        };
+      }[];
+      grand: { hours: number; regular: number; overtime: number; gross: number; net: number };
+    }>("/api/admin/summary"),
   getUser: (id: string) =>
     request<{ user: ClientUser; shifts: Shift[]; scheduled: ScheduledShift[] }>(`/api/admin/users/${id}`),
   updateUser: (id: string, patch: { name?: string; role?: "admin" | "employee"; active?: boolean; hourlyRate?: number }) =>
