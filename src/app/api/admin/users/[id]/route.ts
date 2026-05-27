@@ -51,3 +51,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const [updated] = await db.update(schema.users).set(patch).where(eq(schema.users.id, params.id)).returning();
   return NextResponse.json({ user: dbUserToClient(updated) });
 }
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (me.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (params.id === me.id) {
+    return NextResponse.json({ error: "You can't delete your own account here." }, { status: 400 });
+  }
+  await db.delete(schema.users).where(eq(schema.users.id, params.id));
+  return NextResponse.json({ ok: true });
+}

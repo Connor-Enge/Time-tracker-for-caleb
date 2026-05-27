@@ -4,8 +4,10 @@ import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useApp } from "./AppProvider";
+import { useToast } from "./Toast";
 import { formatHours, formatMoney, shiftHours } from "@/lib/time";
 import { Shift } from "@/lib/types";
+import { api } from "@/lib/api";
 
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
@@ -14,8 +16,24 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ShiftRow({ shift }: { shift: Shift }) {
-  const { user, updateShift, deleteShift } = useApp();
+export function ShiftRow({
+  shift,
+  hourlyRate,
+  currency,
+  onUpdated,
+  onDeleted,
+}: {
+  shift: Shift;
+  hourlyRate?: number;
+  currency?: string;
+  onUpdated?: (s: Shift) => void;
+  onDeleted?: (id: string) => void;
+}) {
+  const app = useApp();
+  const toast = useToast();
+  const rate = hourlyRate ?? app.user?.settings.hourlyRate ?? 0;
+  const cur = currency ?? app.user?.settings.currency ?? "USD";
+
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     clockIn: toLocalInput(shift.clockIn),
@@ -24,34 +42,54 @@ export function ShiftRow({ shift }: { shift: Shift }) {
     job: shift.job || "",
     notes: shift.notes || "",
   });
-  const [err, setErr] = useState<string | null>(null);
 
   const hours = shiftHours(shift);
-  const pay = hours * (user?.settings.hourlyRate || 0);
+  const pay = hours * rate;
 
   async function save() {
-    setErr(null);
     try {
       const ci = new Date(form.clockIn);
       const co = form.clockOut ? new Date(form.clockOut) : null;
       if (Number.isNaN(ci.getTime())) {
-        setErr("Invalid clock in");
+        toast.error("Invalid clock-in time");
         return;
       }
       if (co && Number.isNaN(co.getTime())) {
-        setErr("Invalid clock out");
+        toast.error("Invalid clock-out time");
         return;
       }
-      await updateShift(shift.id, {
+      const patch = {
         clockIn: ci.toISOString(),
         clockOut: co ? co.toISOString() : null,
         breakMinutes: Math.max(0, Number(form.breakMinutes) || 0),
         job: form.job || undefined,
         notes: form.notes || undefined,
-      });
+      };
+      if (onUpdated) {
+        const { shift: updated } = await api.updateShift(shift.id, patch);
+        onUpdated(updated);
+      } else {
+        await app.updateShift(shift.id, patch);
+      }
       setEditing(false);
+      toast.success("Shift updated");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : "Failed to update");
+    }
+  }
+
+  async function remove() {
+    if (!confirm("Delete this shift?")) return;
+    try {
+      if (onDeleted) {
+        await api.deleteShift(shift.id);
+        onDeleted(shift.id);
+      } else {
+        await app.deleteShift(shift.id);
+      }
+      toast.success("Shift deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
@@ -70,7 +108,7 @@ export function ShiftRow({ shift }: { shift: Shift }) {
         </div>
         <div className="text-right">
           <div className="text-sm font-semibold tabular-nums">{formatHours(hours)}</div>
-          <div className="text-xs text-slate-500">{formatMoney(pay, user?.settings.currency)}</div>
+          <div className="text-xs text-slate-500">{formatMoney(pay, cur)}</div>
         </div>
       </div>
       <div className="mt-2 flex justify-end gap-1">
@@ -82,9 +120,7 @@ export function ShiftRow({ shift }: { shift: Shift }) {
           <Pencil size={15} />
         </button>
         <button
-          onClick={() => {
-            if (confirm("Delete this shift?")) deleteShift(shift.id);
-          }}
+          onClick={remove}
           className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
           aria-label="Delete"
         >
@@ -139,7 +175,6 @@ export function ShiftRow({ shift }: { shift: Shift }) {
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
             className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
           />
-          {err && <p className="text-sm text-rose-500">{err}</p>}
           <div className="flex gap-2">
             <button
               onClick={save}

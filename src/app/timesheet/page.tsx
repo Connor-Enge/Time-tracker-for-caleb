@@ -1,17 +1,29 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { format } from "date-fns";
+import { format, startOfMonth } from "date-fns";
 import { Download, Plus } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { ShiftRow } from "@/components/ShiftRow";
-import { dayKey, formatHours, formatMoney, shiftHours } from "@/lib/time";
+import { useToast } from "@/components/Toast";
+import { SkeletonCard } from "@/components/Skeleton";
+import {
+  dayKey,
+  formatHours,
+  formatMoney,
+  getWeekRange,
+  shiftHours,
+} from "@/lib/time";
 import { downloadCSV, shiftsToCSV } from "@/lib/csv";
 
+type Filter = "week" | "month" | "all";
+
 export default function TimesheetPage() {
-  const { user, shifts, addManualShift } = useApp();
+  const { user, shifts, ready, addManualShift } = useApp();
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState<Filter>("week");
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     start: "09:00",
@@ -20,22 +32,39 @@ export default function TimesheetPage() {
     job: "",
     notes: "",
   });
-  const [err, setErr] = useState<string | null>(null);
+
+  const filteredShifts = useMemo(() => {
+    if (!user) return shifts;
+    if (filter === "all") return shifts;
+    const now = new Date();
+    if (filter === "week") {
+      const { start, end } = getWeekRange(now, user.settings.weekStartsOn);
+      return shifts.filter((s) => {
+        const t = new Date(s.clockIn).getTime();
+        return t >= start.getTime() && t <= end.getTime() + 86_400_000;
+      });
+    }
+    const start = startOfMonth(now).getTime();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59).getTime();
+    return shifts.filter((s) => {
+      const t = new Date(s.clockIn).getTime();
+      return t >= start && t <= end;
+    });
+  }, [shifts, filter, user]);
 
   const grouped = useMemo(() => {
-    const map: Record<string, typeof shifts> = {};
-    for (const s of shifts) (map[dayKey(s.clockIn)] ??= []).push(s);
+    const map: Record<string, typeof filteredShifts> = {};
+    for (const s of filteredShifts) (map[dayKey(s.clockIn)] ??= []).push(s);
     return Object.entries(map)
       .sort(([a], [b]) => (a < b ? 1 : -1))
       .map(([k, v]) => [k, v.sort((a, b) => (a.clockIn < b.clockIn ? -1 : 1))] as const);
-  }, [shifts]);
+  }, [filteredShifts]);
 
-  const totalHours = shifts.reduce((acc, s) => acc + shiftHours(s), 0);
+  const totalHours = filteredShifts.reduce((acc, s) => acc + shiftHours(s), 0);
   const totalPay = totalHours * (user?.settings.hourlyRate || 0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
     try {
       const ci = new Date(`${form.date}T${form.start}`);
       const co = new Date(`${form.date}T${form.end}`);
@@ -48,9 +77,19 @@ export default function TimesheetPage() {
         notes: form.notes || undefined,
       });
       setAdding(false);
+      toast.success("Shift added");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : "Failed to add shift");
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
   }
 
   return (
@@ -63,10 +102,11 @@ export default function TimesheetPage() {
             <button
               onClick={() => {
                 if (!user) return;
-                const rows = shiftsToCSV(shifts, user.settings.hourlyRate, user.name || user.email);
+                const rows = shiftsToCSV(filteredShifts, user.settings.hourlyRate, user.name || user.email);
                 downloadCSV(`shifts-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+                toast.success("CSV downloaded");
               }}
-              disabled={shifts.length === 0}
+              disabled={filteredShifts.length === 0}
               className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-slate-700"
               aria-label="Export CSV"
             >
@@ -81,6 +121,22 @@ export default function TimesheetPage() {
           </div>
         }
       />
+
+      <div className="flex gap-1.5">
+        {(["week", "month", "all"] as Filter[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition ${
+              filter === f
+                ? "bg-brand-600 text-white shadow-sm"
+                : "border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300"
+            }`}
+          >
+            {f === "week" ? "This week" : f === "month" ? "This month" : "All time"}
+          </button>
+        ))}
+      </div>
 
       {adding && (
         <Card>
@@ -143,7 +199,6 @@ export default function TimesheetPage() {
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
             />
-            {err && <p className="text-sm text-rose-500">{err}</p>}
             <button
               type="submit"
               className="w-full rounded-xl bg-brand-600 py-2 text-sm font-medium text-white"
@@ -157,7 +212,7 @@ export default function TimesheetPage() {
       {grouped.length === 0 && (
         <Card>
           <p className="text-center text-sm text-slate-500">
-            No shifts yet. Clock in from the home tab or add one manually.
+            No shifts in this range. Clock in from the home tab or add one manually.
           </p>
         </Card>
       )}

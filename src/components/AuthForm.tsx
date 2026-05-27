@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Clock } from "lucide-react";
+import { Clock, Eye, EyeOff } from "lucide-react";
 import { api } from "@/lib/api";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
@@ -13,6 +13,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -80,15 +81,25 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </label>
         <label className="block text-sm">
           <span className="text-slate-500">Password</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
-          />
+          <div className="relative mt-1">
+            <input
+              type={showPwd ? "text" : "password"}
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 dark:border-slate-700 dark:bg-slate-950"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPwd((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+              aria-label={showPwd ? "Hide password" : "Show password"}
+            >
+              {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </label>
         {err && <p className="text-sm text-rose-500">{err}</p>}
         <button

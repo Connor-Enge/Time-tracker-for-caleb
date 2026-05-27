@@ -67,8 +67,14 @@ export const api = {
 
   updateSettings: (patch: Partial<Settings> & { name?: string }) =>
     request<{ user: ClientUser }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    request<{ ok: true }>("/api/auth/password", { method: "POST", body: JSON.stringify(body) }),
 
   listUsers: () => request<{ users: ClientUser[] }>("/api/admin/users"),
+  createUser: (body: { email: string; password: string; name?: string; hourlyRate?: number; role?: "admin" | "employee" }) =>
+    request<{ user: ClientUser }>("/api/admin/users", { method: "POST", body: JSON.stringify(body) }),
+  deleteUser: (id: string) =>
+    request<{ ok: true }>(`/api/admin/users/${id}`, { method: "DELETE" }),
   adminSummary: () =>
     request<{
       rows: {

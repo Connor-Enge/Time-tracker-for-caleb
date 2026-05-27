@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LogOut } from "lucide-react";
+import { Eye, EyeOff, LogOut, ShieldCheck } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
+import { useToast } from "@/components/Toast";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { OvertimeRule, PayPeriodType, Settings } from "@/lib/types";
 import { describeOvertimeRule, describePayPeriod } from "@/lib/time";
+import { api } from "@/lib/api";
 
 const otRules: OvertimeRule[] = ["none", "daily8", "weekly40", "both"];
 const payPeriods: PayPeriodType[] = ["weekly", "biweekly", "semimonthly", "monthly"];
 
 export default function SettingsPage() {
   const { user, updateSettings, logout } = useApp();
+  const toast = useToast();
   const [form, setForm] = useState<Settings & { name: string }>({
     name: "",
     employeeName: "",
@@ -25,8 +28,6 @@ export default function SettingsPage() {
     currency: "USD",
   });
   const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) setForm({ ...user.settings, name: user.name });
@@ -34,14 +35,12 @@ export default function SettingsPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
     setSaving(true);
     try {
       await updateSettings(form);
-      setSavedMsg("Saved");
-      setTimeout(() => setSavedMsg(null), 1500);
+      toast.success("Settings saved");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -53,7 +52,7 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="Settings" subtitle={user.email} />
 
-      <Card>
+      <Section title="Profile">
         <form onSubmit={submit} className="space-y-3 text-sm">
           <Field label="Full name">
             <input
@@ -62,6 +61,12 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950"
             />
           </Field>
+          <SaveButton saving={saving} />
+        </form>
+      </Section>
+
+      <Section title="Pay & overtime">
+        <form onSubmit={submit} className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-2">
             <Field label="Hourly rate">
               <input
@@ -101,7 +106,9 @@ export default function SettingsPage() {
             <Field label="Pay period">
               <select
                 value={form.payPeriodType}
-                onChange={(e) => setForm({ ...form, payPeriodType: e.target.value as PayPeriodType })}
+                onChange={(e) =>
+                  setForm({ ...form, payPeriodType: e.target.value as PayPeriodType })
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950"
               >
                 {payPeriods.map((p) => (
@@ -152,25 +159,22 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950"
             />
           </Field>
-
-          {err && <p className="text-sm text-rose-500">{err}</p>}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full rounded-xl bg-brand-600 py-3 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {saving ? "Saving…" : savedMsg || "Save settings"}
-          </button>
+          <SaveButton saving={saving} />
         </form>
-      </Card>
+      </Section>
 
-      <Card>
+      <Section title="Security">
+        <ChangePassword />
+      </Section>
+
+      <Section title="Account">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs uppercase tracking-wider text-slate-500">Account</div>
             <div className="text-sm">
-              Signed in as <span className="font-medium">{user.email}</span> ({user.role})
+              Signed in as <span className="font-medium">{user.email}</span>
+            </div>
+            <div className="mt-0.5 text-xs text-slate-500">
+              Role: <span className="font-medium">{user.role}</span>
             </div>
           </div>
           <button
@@ -180,8 +184,17 @@ export default function SettingsPage() {
             <LogOut size={15} /> Sign out
           </button>
         </div>
-      </Card>
+      </Section>
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Card>
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</div>
+      {children}
+    </Card>
   );
 }
 
@@ -191,5 +204,87 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-slate-500">{label}</span>
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+function SaveButton({ saving }: { saving: boolean }) {
+  return (
+    <button
+      type="submit"
+      disabled={saving}
+      className="w-full rounded-xl bg-brand-600 py-3 text-sm font-medium text-white disabled:opacity-60"
+    >
+      {saving ? "Saving…" : "Save"}
+    </button>
+  );
+}
+
+function ChangePassword() {
+  const toast = useToast();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (next.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.changePassword({ currentPassword: current, newPassword: next });
+      toast.success("Password updated");
+      setCurrent("");
+      setNext("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to change password");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2 text-sm">
+      <Field label="Current password">
+        <div className="relative">
+          <input
+            type={show ? "text" : "password"}
+            required
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 pr-9 dark:border-slate-700 dark:bg-slate-950"
+          />
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+            aria-label={show ? "Hide passwords" : "Show passwords"}
+          >
+            {show ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+      </Field>
+      <Field label="New password (min 8 chars)">
+        <input
+          type={show ? "text" : "password"}
+          required
+          minLength={8}
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950"
+        />
+      </Field>
+      <button
+        type="submit"
+        disabled={busy}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-2.5 text-sm font-medium text-white disabled:opacity-60"
+      >
+        <ShieldCheck size={15} /> {busy ? "Updating…" : "Update password"}
+      </button>
+    </form>
   );
 }

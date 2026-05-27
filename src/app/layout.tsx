@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Shell } from "@/components/Shell";
 import { AppProvider } from "@/components/AppProvider";
+import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Time Tracker",
@@ -20,9 +21,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <AppProvider>
-          <Shell>{children}</Shell>
-        </AppProvider>
+        <ToastProvider>
+          <AppProvider>
+            <Shell>{children}</Shell>
+          </AppProvider>
+        </ToastProvider>
       </body>
     </html>
   );

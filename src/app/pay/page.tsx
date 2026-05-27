@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { addDays, endOfYear, format, startOfYear, subMonths } from "date-fns";
+import { addDays, differenceInDays, endOfYear, format, startOfYear, subMonths } from "date-fns";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
+import { HoursChart } from "@/components/HoursChart";
 import {
   computePeriodTotals,
   computeWeekTotals,
@@ -135,6 +136,15 @@ export default function PayPage() {
           <Stat label="Hours" value={formatHours(totals.totalHours)} />
           <Stat label="Regular" value={formatHours(totals.regular)} />
           <Stat label="Overtime" value={formatHours(totals.overtime)} accent="amber" />
+        </div>
+
+        <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Hours by day</div>
+          <HoursChart
+            shifts={periodShifts}
+            start={period.start}
+            days={Math.min(31, differenceInDays(period.end, period.start) + 1)}
+          />
         </div>
 
         <div className="mt-4 space-y-1 border-t border-slate-200 pt-3 dark:border-slate-800">
