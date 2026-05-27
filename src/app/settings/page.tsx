@@ -5,6 +5,7 @@ import { Eye, EyeOff, LogOut, ShieldCheck } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { useToast } from "@/components/Toast";
 import { Card, PageHeader } from "@/components/PageHeader";
+import { LoadGate } from "@/components/LoadGate";
 import { OvertimeRule, PayPeriodType, Settings } from "@/lib/types";
 import { describeOvertimeRule, describePayPeriod } from "@/lib/time";
 import { api } from "@/lib/api";
@@ -13,6 +14,14 @@ const otRules: OvertimeRule[] = ["none", "daily8", "weekly40", "both"];
 const payPeriods: PayPeriodType[] = ["weekly", "biweekly", "semimonthly", "monthly"];
 
 export default function SettingsPage() {
+  return (
+    <LoadGate>
+      <SettingsContent />
+    </LoadGate>
+  );
+}
+
+function SettingsContent() {
   const { user, updateSettings, logout } = useApp();
   const toast = useToast();
   const [form, setForm] = useState<Settings & { name: string }>({

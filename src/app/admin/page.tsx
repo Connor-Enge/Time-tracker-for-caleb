@@ -80,8 +80,10 @@ export default function AdminPage() {
       const allRows: (string | number)[][] = [
         ["Employee", "Date", "Clock In", "Clock Out", "Break (min)", "Hours", "Job", "Notes", "Pay"],
       ];
-      for (const { user: u } of summary.rows) {
-        const { shifts } = await api.listShifts(u.id);
+      const results = await Promise.all(
+        summary.rows.map(({ user: u }) => api.listShifts(u.id).then((r) => ({ u, shifts: r.shifts }))),
+      );
+      for (const { u, shifts } of results) {
         const rows = shiftsToCSV(shifts, u.settings.hourlyRate, u.name || u.email);
         for (let i = 1; i < rows.length; i++) allRows.push(rows[i]);
       }

@@ -7,8 +7,8 @@ import { ArrowRight, CalendarClock } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { ClockCard } from "@/components/ClockCard";
 import { HoursChart } from "@/components/HoursChart";
+import { LoadGate } from "@/components/LoadGate";
 import { Card, PageHeader } from "@/components/PageHeader";
-import { SkeletonCard } from "@/components/Skeleton";
 import {
   computePeriodTotals,
   computeWeekTotals,
@@ -21,7 +21,15 @@ import {
 } from "@/lib/time";
 
 export default function Home() {
-  const { user, ready, shifts, scheduled } = useApp();
+  return (
+    <LoadGate>
+      <HomeContent />
+    </LoadGate>
+  );
+}
+
+function HomeContent() {
+  const { user, shifts, scheduled } = useApp();
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayKey = dayKey(today);
@@ -59,18 +67,6 @@ export default function Home() {
       .sort((a, b) => (a.date < b.date ? -1 : 1))[0];
   }, [scheduled, todayKey]);
 
-  if (!ready) {
-    return (
-      <div className="flex flex-col gap-4">
-        <SkeletonCard />
-        <SkeletonCard lines={1} />
-        <div className="grid grid-cols-2 gap-3">
-          <SkeletonCard lines={1} />
-          <SkeletonCard lines={1} />
-        </div>
-      </div>
-    );
-  }
   if (!user) return null;
 
   const greet = (() => {

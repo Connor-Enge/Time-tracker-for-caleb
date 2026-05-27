@@ -7,7 +7,7 @@ import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { ShiftRow } from "@/components/ShiftRow";
 import { useToast } from "@/components/Toast";
-import { SkeletonCard } from "@/components/Skeleton";
+import { LoadGate } from "@/components/LoadGate";
 import {
   dayKey,
   formatHours,
@@ -20,7 +20,15 @@ import { downloadCSV, shiftsToCSV } from "@/lib/csv";
 type Filter = "week" | "month" | "all";
 
 export default function TimesheetPage() {
-  const { user, shifts, ready, addManualShift } = useApp();
+  return (
+    <LoadGate>
+      <TimesheetContent />
+    </LoadGate>
+  );
+}
+
+function TimesheetContent() {
+  const { user, shifts, addManualShift } = useApp();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<Filter>("week");
@@ -81,15 +89,6 @@ export default function TimesheetPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to add shift");
     }
-  }
-
-  if (!ready) {
-    return (
-      <div className="flex flex-col gap-4">
-        <SkeletonCard />
-        <SkeletonCard />
-      </div>
-    );
   }
 
   return (

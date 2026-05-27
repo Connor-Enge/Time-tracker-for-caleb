@@ -31,6 +31,10 @@ export const api = {
     request<{ user: ClientUser }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
   me: () => request<{ user: ClientUser; activeShift: Shift | null }>("/api/auth/me"),
+  bootstrap: () =>
+    request<{ user: ClientUser; activeShift: Shift | null; shifts: Shift[]; scheduled: ScheduledShift[] }>(
+      "/api/bootstrap",
+    ),
 
   listShifts: (userId?: string) =>
     request<{ shifts: Shift[] }>(`/api/shifts${userId ? `?userId=${userId}` : ""}`),

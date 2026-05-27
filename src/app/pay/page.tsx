@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { useApp } from "@/components/AppProvider";
 import { Card, PageHeader } from "@/components/PageHeader";
 import { HoursChart } from "@/components/HoursChart";
+import { LoadGate } from "@/components/LoadGate";
 import {
   computePeriodTotals,
   computeWeekTotals,
@@ -18,6 +19,14 @@ import {
 import { downloadCSV, shiftsToCSV } from "@/lib/csv";
 
 export default function PayPage() {
+  return (
+    <LoadGate>
+      <PayContent />
+    </LoadGate>
+  );
+}
+
+function PayContent() {
   const { user, shifts } = useApp();
   const [cursor, setCursor] = useState<Date>(new Date());
 

@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -12,6 +20,7 @@ import {
 
 type State = {
   ready: boolean;
+  loadError: string | null;
   user: ClientUser | null;
   activeShift: Shift | null;
   shifts: Shift[];
@@ -37,46 +46,76 @@ type Ctx = State & {
 const AppCtx = createContext<Ctx | null>(null);
 
 const AUTH_PAGES = new Set(["/login", "/signup"]);
+const EMPTY: State = {
+  ready: true,
+  loadError: null,
+  user: null,
+  activeShift: null,
+  shifts: [],
+  scheduled: [],
+};
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [state, setState] = useState<State>({
-    ready: false,
-    user: null,
-    activeShift: null,
-    shifts: [],
-    scheduled: [],
-  });
+  const [state, setState] = useState<State>({ ...EMPTY, ready: false });
+  const hasFetchedRef = useRef(false);
+  const onAuthPageRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (pathname && AUTH_PAGES.has(pathname)) {
-      setState((s) => ({ ...s, ready: true, user: null, activeShift: null, shifts: [], scheduled: [] }));
-      return;
-    }
+    setState((s) => ({ ...s, loadError: null }));
     try {
-      const me = await api.me();
-      const [{ shifts }, { scheduled }] = await Promise.all([api.listShifts(), api.listScheduled()]);
-      setState({ ready: true, user: me.user, activeShift: me.activeShift, shifts, scheduled });
-    } catch {
-      setState({ ready: true, user: null, activeShift: null, shifts: [], scheduled: [] });
+      const data = await api.bootstrap();
+      setState({
+        ready: true,
+        loadError: null,
+        user: data.user,
+        activeShift: data.activeShift,
+        shifts: data.shifts,
+        scheduled: data.scheduled,
+      });
+      hasFetchedRef.current = true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load";
+      const unauth = /unauthor/i.test(msg);
+      setState({
+        ready: true,
+        loadError: unauth ? null : msg,
+        user: null,
+        activeShift: null,
+        shifts: [],
+        scheduled: [],
+      });
+      if (unauth) {
+        router.replace("/login");
+      }
     }
-  }, [pathname]);
+  }, [router]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const isAuthPage = pathname ? AUTH_PAGES.has(pathname) : false;
+    if (isAuthPage) {
+      onAuthPageRef.current = true;
+      setState((s) => (s.ready ? s : { ...EMPTY }));
+      return;
+    }
+    const cameFromAuth = onAuthPageRef.current;
+    onAuthPageRef.current = false;
+    if (!hasFetchedRef.current || cameFromAuth) {
+      refresh();
+    }
+  }, [pathname, refresh]);
 
-  const api_clockIn = useCallback(async (opts?: { job?: string; notes?: string }) => {
+  const clockIn = useCallback(async (opts?: { job?: string; notes?: string }) => {
     const { shift } = await api.clockIn(opts);
     setState((s) => {
-      const existing = s.shifts.find((x) => x.id === shift.id);
-      const shifts = existing ? s.shifts.map((x) => (x.id === shift.id ? shift : x)) : [...s.shifts, shift];
+      const exists = s.shifts.find((x) => x.id === shift.id);
+      const shifts = exists ? s.shifts.map((x) => (x.id === shift.id ? shift : x)) : [...s.shifts, shift];
       return { ...s, shifts, activeShift: shift };
     });
   }, []);
 
-  const api_clockOut = useCallback(async () => {
+  const clockOut = useCallback(async () => {
     const { shift } = await api.clockOut();
     setState((s) => ({
       ...s,
@@ -85,7 +124,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const api_cancel = useCallback(async () => {
+  const cancelActive = useCallback(async () => {
     const activeId = state.activeShift?.id;
     await api.cancelActive();
     setState((s) => ({
@@ -95,7 +134,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, [state.activeShift?.id]);
 
-  const api_break = useCallback(async (minutes: number) => {
+  const addBreak = useCallback(async (minutes: number) => {
     const { shift } = await api.addBreak(minutes);
     if (!shift) return;
     setState((s) => ({
@@ -105,21 +144,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const api_addManual = useCallback(async (shift: Omit<Shift, "id">) => {
+  const addManualShift = useCallback(async (shift: Omit<Shift, "id">) => {
     const { shift: created } = await api.createShift(shift);
     setState((s) => ({ ...s, shifts: [...s.shifts, created] }));
   }, []);
 
-  const api_updateShift = useCallback(async (id: string, patch: Partial<Shift>) => {
+  const updateShift = useCallback(async (id: string, patch: Partial<Shift>) => {
     const { shift } = await api.updateShift(id, patch);
     setState((s) => ({
       ...s,
       shifts: s.shifts.map((x) => (x.id === id ? shift : x)),
-      activeShift: s.activeShift?.id === id ? (shift.clockOut ? null : shift) : s.activeShift,
+      activeShift:
+        s.activeShift?.id === id ? (shift.clockOut ? null : shift) : s.activeShift,
     }));
   }, []);
 
-  const api_deleteShift = useCallback(async (id: string) => {
+  const deleteShift = useCallback(async (id: string) => {
     await api.deleteShift(id);
     setState((s) => ({
       ...s,
@@ -128,29 +168,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const api_addScheduled = useCallback(async (sNew: Omit<ScheduledShift, "id">) => {
+  const addScheduled = useCallback(async (sNew: Omit<ScheduledShift, "id">) => {
     const { scheduled } = await api.createScheduled(sNew);
     setState((s) => ({ ...s, scheduled: [...s.scheduled, scheduled] }));
   }, []);
 
-  const api_updateScheduled = useCallback(async (id: string, patch: Partial<ScheduledShift>) => {
+  const updateScheduled = useCallback(async (id: string, patch: Partial<ScheduledShift>) => {
     const { scheduled } = await api.updateScheduled(id, patch);
     setState((s) => ({ ...s, scheduled: s.scheduled.map((x) => (x.id === id ? scheduled : x)) }));
   }, []);
 
-  const api_deleteScheduled = useCallback(async (id: string) => {
+  const deleteScheduled = useCallback(async (id: string) => {
     await api.deleteScheduled(id);
     setState((s) => ({ ...s, scheduled: s.scheduled.filter((x) => x.id !== id) }));
   }, []);
 
-  const api_updateSettings = useCallback(async (patch: Partial<Settings> & { name?: string }) => {
+  const updateSettings = useCallback(async (patch: Partial<Settings> & { name?: string }) => {
     const { user } = await api.updateSettings(patch);
     setState((s) => ({ ...s, user }));
   }, []);
 
-  const api_logout = useCallback(async () => {
+  const logout = useCallback(async () => {
     await api.logout();
-    setState({ ready: true, user: null, activeShift: null, shifts: [], scheduled: [] });
+    hasFetchedRef.current = false;
+    setState({ ...EMPTY });
     router.push("/login");
   }, [router]);
 
@@ -158,34 +199,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       refresh,
-      clockIn: api_clockIn,
-      clockOut: api_clockOut,
-      cancelActive: api_cancel,
-      addBreak: api_break,
-      addManualShift: api_addManual,
-      updateShift: api_updateShift,
-      deleteShift: api_deleteShift,
-      addScheduled: api_addScheduled,
-      updateScheduled: api_updateScheduled,
-      deleteScheduled: api_deleteScheduled,
-      updateSettings: api_updateSettings,
-      logout: api_logout,
+      clockIn,
+      clockOut,
+      cancelActive,
+      addBreak,
+      addManualShift,
+      updateShift,
+      deleteShift,
+      addScheduled,
+      updateScheduled,
+      deleteScheduled,
+      updateSettings,
+      logout,
     }),
     [
       state,
       refresh,
-      api_clockIn,
-      api_clockOut,
-      api_cancel,
-      api_break,
-      api_addManual,
-      api_updateShift,
-      api_deleteShift,
-      api_addScheduled,
-      api_updateScheduled,
-      api_deleteScheduled,
-      api_updateSettings,
-      api_logout,
+      clockIn,
+      clockOut,
+      cancelActive,
+      addBreak,
+      addManualShift,
+      updateShift,
+      deleteShift,
+      addScheduled,
+      updateScheduled,
+      deleteScheduled,
+      updateSettings,
+      logout,
     ],
   );
 
